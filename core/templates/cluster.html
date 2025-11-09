@@ -1,147 +1,172 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% load static %}
 {% block content %}
 
 <style>
-body {
-  background: url("{% static 'images/pexels-cottonbro-8369520.jpg' %}") center/cover fixed no-repeat;
+/* Typing effect header */
+.animated-header {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #00eaff, #ffb347, #a569bd);
+  background-size: 200% auto;
+  color: #fff;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shine 3s linear infinite, typing 2s steps(30) 1s forwards;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 4px solid #fff;
+  text-align: center;
+  margin-bottom: 30px;
+}
+@keyframes shine { to { background-position: 200% center; } }
+@keyframes typing { from { width: 0; } to { width: 100%; } }
+
+/* Form & container styling */
+.cluster-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+.cluster-form {
+  flex: 1 1 300px;
+  max-width: 400px;
+  background: #111;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
   color: #fff;
 }
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(6px);
-  z-index: -1;
+.cluster-form label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
 }
-
-/* Glass container */
-.cluster-box {
-  background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(0, 255, 255, 0.25);
-  border-radius: 18px;
-  padding: 40px;
-  margin: 50px auto;
-  box-shadow: 0 0 25px rgba(0, 255, 255, 0.3);
-  max-width: 750px;
+.cluster-form select,
+.cluster-form input {
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  border: none;
+  outline: none;
 }
-
-.cluster-box h3 {
-  color: #00eaff;
-  text-shadow: 0 0 10px rgba(0, 255, 255, 0.6);
-  font-weight: 700;
-}
-
-/* Inputs & selects */
-.form-select,
-.form-control {
-  background: #f9f9f9;
-  color: #111;
-  border: 1px solid #00bde0;
+.cluster-form button {
+  width: 100%;
+  padding: 10px;
   border-radius: 8px;
-  font-weight: 500;
-}
-.form-select:hover,
-.form-control:hover {
-  box-shadow: 0 0 6px rgba(0, 255, 255, 0.4);
-}
-
-/* Buttons */
-.btn-info {
-  background-color: #00d5ff;
+  border: none;
+  background-color: #00eaff;
   color: #000;
   font-weight: 600;
-  border: none;
+  cursor: pointer;
+  transition: 0.2s;
 }
-.btn-info:hover {
-  background-color: #00b3db;
+.cluster-form button:hover { background-color: #00b3cc; }
+
+/* Image & plots layout */
+.plot-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+.plot-box {
+  flex: 1 1 300px;
+  max-width: 400px;
+  text-align: center;
+}
+.plot-box img {
+  max-width: 100%;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+  cursor: zoom-in;
 }
 
-/* Zoom effect for cluster image */
-.zoomable {
-  cursor: zoom-in;
-  transition: transform 0.25s ease;
+/* Result styling */
+.result-box {
+  text-align: center;
+  margin-bottom: 30px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #00eaff;
 }
-.zoomable:hover {
-  transform: scale(1.04);
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+  .cluster-container, .plot-container { flex-direction: column; align-items: center; }
 }
 </style>
 
-<div class="container cluster-box">
-  <h3 class="text-center mb-4">🔍 Crime Cluster Prediction</h3>
+<h2 class="animated-header">Crime Cluster Dashboard</h2>
 
-  <form method="POST" action="/cluster/">
+<div class="cluster-container">
+  <form method="POST" class="cluster-form">
     {% csrf_token %}
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Select City</label>
-        <select name="city" class="form-select" required>
-          <option value="">-- Choose City --</option>
-          {% for c in cities %}
-          <option value="{{ c }}">{{ c }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Select Crime Type</label>
-        <select name="crime" class="form-select">
-          <option value="">-- Optional --</option>
-          {% for cr in crimes %}
-          <option value="{{ cr }}">{{ cr }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <!-- New Weapon Used Field -->
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Select Weapon Used</label>
-        <select name="weapon" class="form-select">
-          <option value="">-- Optional --</option>
-          {% for w in weapons %}
-          <option value="{{ w }}">{{ w }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <!-- New Victim Gender Field -->
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Select Victim Gender</label>
-        <select name="gender" class="form-select">
-          <option value="">-- Optional --</option>
-          {% for g in genders %}
-          <option value="{{ g }}">{{ g }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-
-    <button type="submit" class="btn btn-info w-100 fw-bold">Predict Cluster</button>
+    <label for="city">Select City:</label>
+    <select name="city" id="city">
+      {% for city in cities %}
+      <option value="{{ city }}" {% if city == selected_city %}selected{% endif %}>{{ city }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Predict Cluster</button>
   </form>
+</div>
 
-  {% if result %}
-  <div class="alert alert-info mt-4 text-center"><b>{{ result }}</b></div>
+{% if result %}
+<div class="result-box">{{ result }}</div>
+{% endif %}
+
+<div class="plot-container">
+  {% if elbow_graph %}
+  <div class="plot-box">
+    <h4>Elbow Method</h4>
+    <img src="{{ elbow_graph }}" alt="Elbow Method" onclick="openFullscreen(this)">
+  </div>
   {% endif %}
-
   {% if cluster_plot %}
-  <div class="text-center mt-4">
-    <h5 class="text-light">Cluster Visualization</h5>
-    <img src="{{ cluster_plot }}" class="img-fluid rounded shadow zoomable" onclick="openFullscreen(this)">
-    <p class="text-secondary small mt-2">Click to enlarge</p>
+  <div class="plot-box">
+    <h4>Crime Clusters</h4>
+    <img src="{{ cluster_plot }}" alt="Crime Clusters" onclick="openFullscreen(this)">
   </div>
   {% endif %}
 </div>
 
 <script>
-function openFullscreen(img){
-  const overlay=document.createElement('div');
-  overlay.style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out";
-  const full=document.createElement('img');
-  full.src=img.src;
-  full.style="max-width:95vw;max-height:95vh;border-radius:12px;box-shadow:0 0 20px rgba(0,255,255,0.5)";
-  overlay.appendChild(full);
-  overlay.onclick=()=>overlay.remove();
+function openFullscreen(img) {
+  const overlay = document.createElement('div');
+  overlay.style = `
+    position:fixed; top:0; left:0; width:100vw; height:100vh;
+    background:rgba(0,0,0,0.95); display:flex; align-items:center;
+    justify-content:center; z-index:9999; cursor:zoom-out;
+  `;
+
+  const fullImg = document.createElement('img');
+  fullImg.src = img.src;
+  fullImg.style = `
+    max-width:90vw; max-height:90vh; border-radius:12px;
+    box-shadow:0 0 35px rgba(0,255,255,0.8); cursor:default;
+    transition: transform 0.3s ease;
+  `;
+  overlay.appendChild(fullImg);
+
+  // Click outside image closes
+  overlay.addEventListener('click', (e) => { if(e.target !== fullImg) overlay.remove(); });
+
+  // Optional close button
+  const closeBtn = document.createElement('span');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style = `
+    position:absolute; top:20px; right:30px; font-size:3rem;
+    color:#00eaff; cursor:pointer; z-index:10000;
+  `;
+  closeBtn.onclick = () => overlay.remove();
+  overlay.appendChild(closeBtn);
+
   document.body.appendChild(overlay);
 }
 </script>

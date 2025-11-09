@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block content %}
+
 <style>
 body {
   background: url("{% static 'images/pexels-cottonbro-8369520.jpg' %}") center/cover fixed no-repeat;
@@ -25,11 +26,29 @@ body::before {
   box-shadow: 0 0 25px rgba(0,255,255,0.25);
   animation: fadeIn 0.8s ease;
 }
+
+/* Animated heading */
 .analysis-box h2 {
-  color: #00eaff;
-  text-shadow: 0 0 10px rgba(0,255,255,0.6);
   font-weight: 700;
+  font-size: 2.2rem;
+  background: linear-gradient(90deg, #00eaff, #ffb347, #a569bd);
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  border-right: 4px solid #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: center;
+  animation: shine 3s linear infinite, typing 2s steps(30) 1s forwards, pulse 2.5s infinite alternate ease-in-out;
+  margin-bottom: 20px;
 }
+
+/* Glow and shine animations */
+@keyframes shine { to { background-position: 200% center; } }
+@keyframes typing { from { width: 0; } to { width: 100%; } }
+@keyframes pulse { 0% { text-shadow: 0 0 5px #00eaff; } 100% { text-shadow: 0 0 20px #00eaff; } }
+
 .underline-glow {
   width: 100px;
   height: 3px;
@@ -108,4 +127,5 @@ $(document).ready(function(){
   });
 });
 </script>
+
 {% endblock %}

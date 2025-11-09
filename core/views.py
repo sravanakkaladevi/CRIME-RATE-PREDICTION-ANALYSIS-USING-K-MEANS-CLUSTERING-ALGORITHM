@@ -184,18 +184,19 @@ def analyze_data(request):
         },
     }
     return render(request, "analysis.html", context)
-
-# ---------------- CLUSTER PREDICTION (Final Version) ----------------
+# ---------------- CLUSTER PREDICTION (with Elbow Method) ----------------
 @login_required(login_url='/login/')
 def cluster_prediction(request):
     result, cluster_plot = None, None
     csv_path = os.path.join(settings.BASE_DIR, "data", "NCRB_Table_1A.1.csv")
+    elbow_path = os.path.join(settings.BASE_DIR, "static", "graphs", "elbow_method.png")
+    os.makedirs(os.path.dirname(elbow_path), exist_ok=True)
 
     if not os.path.exists(csv_path):
         messages.warning(request, "⚠️ Please upload the dataset first.")
         return redirect("/upload/")
 
-    # Safe CSV load with cleaning
+    # Safe CSV load
     try:
         df = pd.read_csv(csv_path, encoding="utf-8", on_bad_lines="skip", dtype=str)
         df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
@@ -204,52 +205,70 @@ def cluster_prediction(request):
         messages.error(request, f"❌ Error reading dataset: {e}")
         return redirect("/upload/")
 
+    # Combine columns for clustering
+    df["combined"] = (
+        df["City"].astype(str)
+        + " " + df["Crime Description"].astype(str)
+        + " " + df["Weapon Used"].astype(str)
+        + " " + df["Victim Gender"].astype(str)
+    )
+
+    # Group text by city
+    grouped = df.groupby("City")["combined"].apply(lambda x: " ".join(x)).reset_index()
+
+    # Vectorize
+    from sklearn.feature_extraction.text import CountVectorizer
+    from sklearn.decomposition import TruncatedSVD
+    from sklearn.cluster import KMeans
+
+    vec = CountVectorizer(max_features=2000, stop_words="english")
+    X = vec.fit_transform(grouped["combined"])
+
+    # --- Elbow Method ---
+    distortions = []
+    K = range(1, 8)
+    for k in K:
+        km = KMeans(n_clusters=k, random_state=42, n_init=10)
+        km.fit(X)
+        distortions.append(km.inertia_)
+
+    import matplotlib.pyplot as plt
+    try:
+        import seaborn as sns
+        SEABORN_AVAILABLE = True
+    except ImportError:
+        SEABORN_AVAILABLE = False
+
+    plt.figure(figsize=(6, 4))
+    if SEABORN_AVAILABLE:
+        sns.lineplot(x=list(K), y=distortions, marker='o', color='#00eaff')
+    else:
+        plt.plot(list(K), distortions, marker='o', color='#00eaff')
+    plt.title("Elbow Method - Finding Optimal k")
+    plt.xlabel("Number of Clusters (k)")
+    plt.ylabel("Distortion (Inertia)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(elbow_path)
+    plt.close()
+
+    # K-Means Clustering
+    km = KMeans(n_clusters=3, random_state=42, n_init=10)
+    grouped["cluster"] = km.fit_predict(X)
+
+    # --- FIXED: Cluster labeling based on crime volume ---
+    # Count number of crimes per cluster
+    cluster_counts = grouped.groupby("cluster")["combined"].apply(lambda x: len(x))
+    # Sort clusters by count: smallest → largest
+    ordered_clusters = cluster_counts.sort_values().index.tolist()
+    label_map = {
+        ordered_clusters[0]: "Low Crime Zone",
+        ordered_clusters[1]: "Medium Crime Zone",
+        ordered_clusters[2]: "High Crime Zone",
+    }
+
     if request.method == "POST":
         city = request.POST.get("city")
-        crime_type = request.POST.get("crime")
-        weapon = request.POST.get("weapon")
-        gender = request.POST.get("gender")
-
-        required_cols = ["City", "Crime Description", "Weapon Used", "Victim Gender"]
-        for col in required_cols:
-            if col not in df.columns:
-                result = f"❌ Dataset missing required column: '{col}'"
-                return render(request, "cluster.html", {"result": result})
-
-        # Combine columns for clustering context
-        df["combined"] = (
-            df["City"].astype(str)
-            + " "
-            + df["Crime Description"].astype(str)
-            + " "
-            + df["Weapon Used"].astype(str)
-            + " "
-            + df["Victim Gender"].astype(str)
-        )
-
-        # Group text by city
-        grouped = df.groupby("City")["combined"].apply(lambda x: " ".join(x)).reset_index()
-
-        # Vectorize
-        from sklearn.feature_extraction.text import CountVectorizer
-        from sklearn.decomposition import TruncatedSVD
-        vec = CountVectorizer(max_features=2000, stop_words="english")
-        X = vec.fit_transform(grouped["combined"])
-
-        # K-Means
-        km = KMeans(n_clusters=3, random_state=42, n_init=10)
-        grouped["cluster"] = km.fit_predict(X)
-
-        # ✅ Dynamic cluster labeling based on text size (so “Delhi” won’t be labeled Low)
-        cluster_scores = grouped.groupby("cluster")["combined"].apply(lambda x: x.str.len().mean())
-        ordered_clusters = cluster_scores.sort_values().index.tolist()
-        label_map = {
-            ordered_clusters[0]: "Low Crime Zone",
-            ordered_clusters[1]: "Medium Crime Zone",
-            ordered_clusters[2]: "High Crime Zone",
-        }
-
-        # Final label
         if city not in grouped["City"].values:
             result = f"⚠️ City '{city}' not found in dataset."
         else:
@@ -260,19 +279,19 @@ def cluster_prediction(request):
             svd = TruncatedSVD(n_components=2, random_state=42)
             coords = svd.fit_transform(X)
             plt.figure(figsize=(6, 4))
+            colors = ["#00eaff", "#ffb347", "#a569bd"]
             for c in range(3):
-                plt.scatter(coords[grouped["cluster"] == c, 0], coords[grouped["cluster"] == c, 1],
+                plt.scatter(coords[grouped["cluster"] == c, 0],
+                            coords[grouped["cluster"] == c, 1],
                             label=label_map[c], alpha=0.6)
             idx = grouped.index[grouped["City"] == city][0]
-            plt.scatter(coords[idx, 0], coords[idx, 1], s=120, edgecolors="black",
-                        facecolors="none", linewidths=2)
+            plt.scatter(coords[idx, 0], coords[idx, 1], s=120,
+                        edgecolors="black", facecolors="none", linewidths=2)
             plt.title(f"Crime Clusters (highlighted: {city})")
             plt.legend()
             plt.tight_layout()
-
-            graph_path = os.path.join(settings.BASE_DIR, "static", "graphs", "cluster_cities.png")
-            os.makedirs(os.path.dirname(graph_path), exist_ok=True)
-            plt.savefig(graph_path)
+            cluster_plot_path = os.path.join(settings.BASE_DIR, "static", "graphs", "cluster_cities.png")
+            plt.savefig(cluster_plot_path)
             plt.close()
             cluster_plot = "/static/graphs/cluster_cities.png"
 
@@ -287,12 +306,14 @@ def cluster_prediction(request):
         {
             "result": result,
             "cluster_plot": cluster_plot,
+            "elbow_graph": "/static/graphs/elbow_method.png",
             "cities": cities,
             "crimes": crimes,
             "weapons": weapons,
             "genders": genders,
         },
     )
+
 # ---------------- FUTURE PREDICTION WITH NORMALIZED TREND-BASED RISK ----------------
 @login_required(login_url='/login/')
 def future_prediction(request):
