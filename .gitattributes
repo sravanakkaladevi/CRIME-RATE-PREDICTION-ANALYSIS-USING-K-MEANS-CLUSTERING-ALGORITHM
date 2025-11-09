@@ -1,0 +1,14 @@
+# Tell GitHub Linguist to treat only Python files as primary
+*.html linguist-detectable=false
+*.css linguist-detectable=false
+*.js linguist-detectable=false
+*.json linguist-detectable=false
+*.png linguist-detectable=false
+*.jpg linguist-detectable=false
+*.svg linguist-detectable=false
+*.ico linguist-detectable=false
+*.txt linguist-detectable=false
+*.csv linguist-detectable=false
+
+# Keep Python visible
+*.py linguist-language=Python
