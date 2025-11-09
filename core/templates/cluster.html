@@ -83,6 +83,7 @@ body::before {
           {% endfor %}
         </select>
       </div>
+
       <div class="col-md-6 mb-3">
         <label class="form-label">Select Crime Type</label>
         <select name="crime" class="form-select">
@@ -92,7 +93,30 @@ body::before {
           {% endfor %}
         </select>
       </div>
+
+      <!-- New Weapon Used Field -->
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Select Weapon Used</label>
+        <select name="weapon" class="form-select">
+          <option value="">-- Optional --</option>
+          {% for w in weapons %}
+          <option value="{{ w }}">{{ w }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- New Victim Gender Field -->
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Select Victim Gender</label>
+        <select name="gender" class="form-select">
+          <option value="">-- Optional --</option>
+          {% for g in genders %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
+
     <button type="submit" class="btn btn-info w-100 fw-bold">Predict Cluster</button>
   </form>
 
@@ -121,4 +145,5 @@ function openFullscreen(img){
   document.body.appendChild(overlay);
 }
 </script>
+
 {% endblock %}

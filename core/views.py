@@ -185,8 +185,7 @@ def analyze_data(request):
     }
     return render(request, "analysis.html", context)
 
-
-# ---------------- CLUSTER PREDICTION ----------------
+# ---------------- CLUSTER PREDICTION (Final Version) ----------------
 @login_required(login_url='/login/')
 def cluster_prediction(request):
     result, cluster_plot = None, None
@@ -196,120 +195,207 @@ def cluster_prediction(request):
         messages.warning(request, "⚠️ Please upload the dataset first.")
         return redirect("/upload/")
 
-    df = pd.read_csv(csv_path, on_bad_lines="skip")
+    # Safe CSV load with cleaning
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8", on_bad_lines="skip", dtype=str)
+        df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        df = df.dropna(subset=["City", "Crime Description"])
+    except Exception as e:
+        messages.error(request, f"❌ Error reading dataset: {e}")
+        return redirect("/upload/")
 
     if request.method == "POST":
         city = request.POST.get("city")
         crime_type = request.POST.get("crime")
+        weapon = request.POST.get("weapon")
+        gender = request.POST.get("gender")
 
-        if "City" not in df.columns or "Crime Description" not in df.columns:
-            result = "❌ Dataset missing 'City' or 'Crime Description' columns."
+        required_cols = ["City", "Crime Description", "Weapon Used", "Victim Gender"]
+        for col in required_cols:
+            if col not in df.columns:
+                result = f"❌ Dataset missing required column: '{col}'"
+                return render(request, "cluster.html", {"result": result})
+
+        # Combine columns for clustering context
+        df["combined"] = (
+            df["City"].astype(str)
+            + " "
+            + df["Crime Description"].astype(str)
+            + " "
+            + df["Weapon Used"].astype(str)
+            + " "
+            + df["Victim Gender"].astype(str)
+        )
+
+        # Group text by city
+        grouped = df.groupby("City")["combined"].apply(lambda x: " ".join(x)).reset_index()
+
+        # Vectorize
+        from sklearn.feature_extraction.text import CountVectorizer
+        from sklearn.decomposition import TruncatedSVD
+        vec = CountVectorizer(max_features=2000, stop_words="english")
+        X = vec.fit_transform(grouped["combined"])
+
+        # K-Means
+        km = KMeans(n_clusters=3, random_state=42, n_init=10)
+        grouped["cluster"] = km.fit_predict(X)
+
+        # ✅ Dynamic cluster labeling based on text size (so “Delhi” won’t be labeled Low)
+        cluster_scores = grouped.groupby("cluster")["combined"].apply(lambda x: x.str.len().mean())
+        ordered_clusters = cluster_scores.sort_values().index.tolist()
+        label_map = {
+            ordered_clusters[0]: "Low Crime Zone",
+            ordered_clusters[1]: "Medium Crime Zone",
+            ordered_clusters[2]: "High Crime Zone",
+        }
+
+        # Final label
+        if city not in grouped["City"].values:
+            result = f"⚠️ City '{city}' not found in dataset."
         else:
-            from sklearn.feature_extraction.text import CountVectorizer
-            from sklearn.decomposition import TruncatedSVD
+            cl = int(grouped.loc[grouped["City"] == city, "cluster"].values[0])
+            result = f"{city} is categorized as: {label_map.get(cl, 'Cluster')}"
 
-            df["combined"] = df["City"].astype(str) + " " + df["Crime Description"].astype(str)
-            grouped = df.groupby("City")["combined"].apply(lambda x: " ".join(x)).reset_index()
+            # Plot clusters
+            svd = TruncatedSVD(n_components=2, random_state=42)
+            coords = svd.fit_transform(X)
+            plt.figure(figsize=(6, 4))
+            for c in range(3):
+                plt.scatter(coords[grouped["cluster"] == c, 0], coords[grouped["cluster"] == c, 1],
+                            label=label_map[c], alpha=0.6)
+            idx = grouped.index[grouped["City"] == city][0]
+            plt.scatter(coords[idx, 0], coords[idx, 1], s=120, edgecolors="black",
+                        facecolors="none", linewidths=2)
+            plt.title(f"Crime Clusters (highlighted: {city})")
+            plt.legend()
+            plt.tight_layout()
 
-            vec = CountVectorizer(max_features=2000, stop_words="english")
-            X = vec.fit_transform(grouped["combined"])
-
-            km = KMeans(n_clusters=3, random_state=42, n_init=10)
-            labels = km.fit_predict(X)
-            grouped["cluster"] = labels
-
-            label_map = {0: "Low Crime Zone", 1: "Medium Crime Zone", 2: "High Crime Zone"}
-
-            if city not in grouped["City"].values:
-                result = f"⚠️ City '{city}' not found in dataset."
-            else:
-                cl = int(grouped.loc[grouped["City"] == city, "cluster"].values[0])
-                result = f"{city} is categorized as: {label_map.get(cl, 'Cluster')}"
-
-                # Create 2D cluster plot
-                svd = TruncatedSVD(n_components=2, random_state=42)
-                coords = svd.fit_transform(X)
-                plt.figure(figsize=(6, 4))
-                for c in range(3):
-                    plt.scatter(coords[labels == c, 0], coords[labels == c, 1], label=f"Cluster {c}", alpha=0.6)
-                idx = grouped.index[grouped["City"] == city][0]
-                plt.scatter(coords[idx, 0], coords[idx, 1], s=120, edgecolors="black", facecolors="none", linewidths=2)
-                plt.title(f"Crime Clusters (highlighted: {city})")
-                plt.legend()
-                plt.tight_layout()
-
-                graph_path = os.path.join(settings.BASE_DIR, "static", "graphs", "cluster_cities.png")
-                plt.savefig(graph_path)
-                plt.close()
-                cluster_plot = "/static/graphs/cluster_cities.png"
+            graph_path = os.path.join(settings.BASE_DIR, "static", "graphs", "cluster_cities.png")
+            os.makedirs(os.path.dirname(graph_path), exist_ok=True)
+            plt.savefig(graph_path)
+            plt.close()
+            cluster_plot = "/static/graphs/cluster_cities.png"
 
     cities = sorted(df["City"].dropna().unique().tolist())
     crimes = sorted(df["Crime Description"].dropna().unique().tolist()[:200])
+    weapons = sorted(df["Weapon Used"].dropna().unique().tolist()[:50]) if "Weapon Used" in df.columns else []
+    genders = sorted(df["Victim Gender"].dropna().unique().tolist()[:50]) if "Victim Gender" in df.columns else []
 
-    return render(request, "cluster.html", {"result": result, "cluster_plot": cluster_plot, "cities": cities, "crimes": crimes})
-
-# ---------------- FUTURE PREDICTION WITH RISK LEVEL ----------------
+    return render(
+        request,
+        "cluster.html",
+        {
+            "result": result,
+            "cluster_plot": cluster_plot,
+            "cities": cities,
+            "crimes": crimes,
+            "weapons": weapons,
+            "genders": genders,
+        },
+    )
+# ---------------- FUTURE PREDICTION WITH NORMALIZED TREND-BASED RISK ----------------
 @login_required(login_url='/login/')
 def future_prediction(request):
     result, line_plot, risk_level, risk_color = None, None, None, None
     csv_path = os.path.join(settings.BASE_DIR, "data", "NCRB_Table_1A.1.csv")
 
+    # Step 1: Ensure dataset exists
     if not os.path.exists(csv_path):
         messages.warning(request, "⚠️ Please upload the dataset first.")
         return redirect("/upload/")
 
-    df = pd.read_csv(csv_path, on_bad_lines="skip")
+    # Step 2: Load dataset safely
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8", on_bad_lines="skip", dtype=str)
+        df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    except Exception as e:
+        messages.error(request, f"❌ Error reading dataset: {e}")
+        return redirect("/upload/")
 
-    # Convert dates
+    # Step 3: Convert date columns
     for col in ["Date Reported", "Date of Occurrence"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    if "Date Reported" in df.columns:
+    # Step 4: Extract year
+    if "Date Reported" in df.columns and df["Date Reported"].notna().any():
         df["year"] = df["Date Reported"].dt.year
-    elif "Date of Occurrence" in df.columns:
+    elif "Date of Occurrence" in df.columns and df["Date of Occurrence"].notna().any():
         df["year"] = df["Date of Occurrence"].dt.year
     else:
         result = "❌ No valid date column found."
         return render(request, "future.html", {"result": result})
 
-    # Dropdown cities
+    # Step 5: Clean city/year
+    df = df.dropna(subset=["City", "year"])
     cities = sorted(df["City"].dropna().unique().tolist())
     selected_city = request.POST.get("city") if request.method == "POST" else None
 
     if request.method == "POST":
-        if selected_city and selected_city != "All":
-            df_filtered = df[df["City"] == selected_city]
-        else:
-            df_filtered = df.copy()
+        # Step 6: Filter by city
+        df_filtered = df if selected_city in [None, "All"] else df[df["City"] == selected_city]
 
         year_counts = df_filtered.groupby("year").size().reset_index(name="count").dropna()
-
         if len(year_counts) < 2:
             result = f"⚠️ Not enough data to predict for {selected_city or 'All Cities'}."
         else:
+            # Step 7: Polynomial Regression (smooth trend)
+            from sklearn.linear_model import LinearRegression
+            from sklearn.preprocessing import PolynomialFeatures
+            from sklearn.metrics import r2_score
+            import numpy as np
+
             X = year_counts["year"].values.reshape(-1, 1)
             y = year_counts["count"].values
-            model = LinearRegression().fit(X, y)
 
+            # Smooth the data slightly
+            y = pd.Series(y).rolling(window=2, min_periods=1).mean().values
+
+            poly = PolynomialFeatures(degree=2)
+            X_poly = poly.fit_transform(X)
+            model = LinearRegression().fit(X_poly, y)
+
+            y_pred_train = model.predict(X_poly)
+            r2 = r2_score(y, y_pred_train)
+            model_accuracy = f"Model Accuracy: {round(r2 * 100, 2)}% (Polynomial Fit)"
+
+            # Step 8: Predict next year
             next_year = int(year_counts["year"].max()) + 1
-            pred = model.predict([[next_year]])[0]
+            next_year_poly = poly.transform([[next_year]])
+            pred = model.predict(next_year_poly)[0]
+            pred = max(pred, np.mean(y) * 0.5)  # realistic lower bound
 
-            # 🔥 Risk Level Calculation
-            avg = y.mean()
-            if pred >= avg * 1.25:
-                risk_level, risk_color = "High Risk", "#ff4d4d"  # Red
-            elif pred >= avg * 0.75:
-                risk_level, risk_color = "Medium Risk", "#ffcc00"  # Yellow
+            # Step 9: Compute trend and normalized metrics
+            trend = y[-1] - y[-2] if len(y) >= 2 else 0
+            city_mean = np.mean(y)
+            global_mean = df.groupby("City").size().mean()
+
+            normalized_pred = pred / global_mean
+            growth_factor = trend / max(global_mean, 1)
+            final_score = normalized_pred + (0.25 * np.tanh(growth_factor))
+
+            # Step 10: Risk classification
+            if final_score >= 1.3:
+                risk_level, risk_color = "High Risk", "#ff4d4d"
+            elif final_score >= 0.8:
+                risk_level, risk_color = "Medium Risk", "#ffcc00"
             else:
-                risk_level, risk_color = "Low Risk", "#00ff88"  # Green
+                risk_level, risk_color = "Low Risk", "#00ff88"
 
-            result = f"📈 Predicted reported incidents for {selected_city or 'All Cities'} in {next_year}: {pred:.0f} cases."
+            # Step 11: Final result
+            predicted_cases = int(round(float(pred), 0))
+            result = (
+                f"📈 Predicted incidents for {selected_city or 'All Cities'} in {next_year}: "
+                f"{predicted_cases} cases ({risk_level}). "
+                f"{model_accuracy}"
+            )
 
-            # Plot
+            # Step 12: Plot visualization
             plt.figure(figsize=(7, 4))
-            plt.plot(year_counts["year"], year_counts["count"], marker="o", label="Past Years", linewidth=2)
-            plt.scatter([next_year], [pred], color="red", s=80, label=f"Prediction {next_year}")
+            plt.plot(year_counts["year"], year_counts["count"], marker="o",
+                     label="Past Data", linewidth=2)
+            plt.scatter([next_year], [predicted_cases], color="red", s=80,
+                        label=f"Prediction {next_year}")
             plt.title(f"Crime Trend Prediction - {selected_city or 'All Cities'}", fontsize=12)
             plt.xlabel("Year")
             plt.ylabel("Number of Cases")
@@ -317,12 +403,14 @@ def future_prediction(request):
             plt.grid(True, linestyle="--", alpha=0.5)
             plt.tight_layout()
 
-            os.makedirs(os.path.join(settings.BASE_DIR, "static", "graphs"), exist_ok=True)
-            path = os.path.join(settings.BASE_DIR, "static", "graphs", "future_trend.png")
-            plt.savefig(path, dpi=150)
+            graph_dir = os.path.join(settings.BASE_DIR, "static", "graphs")
+            os.makedirs(graph_dir, exist_ok=True)
+            graph_path = os.path.join(graph_dir, "future_trend.png")
+            plt.savefig(graph_path, dpi=150)
             plt.close()
             line_plot = "/static/graphs/future_trend.png"
 
+    # Step 13: Render
     return render(
         request,
         "future.html",
@@ -335,3 +423,4 @@ def future_prediction(request):
             "risk_color": risk_color,
         },
     )
+
