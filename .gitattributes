@@ -1,60 +1,13 @@
-# ===========================================
-#  Django + Data Science Project GitIgnore
-# ===========================================
+# --- GitHub Linguist Language Balance for Django Project ---
 
-# Python cache and build files
-__pycache__/
-*.py[cod]
-*$py.class
+# Treat HTML, CSS, and JS as documentation assets
+*.html linguist-detectable=false
+*.css linguist-detectable=false
+*.js linguist-detectable=false
 
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
-.idea/
-.vscode/
+# Force Python to be counted correctly
+*.py linguist-detectable=true
+*.py linguist-language=Python
 
-# Django files
-db.sqlite3
-*.log
-*.pot
-*.pyc
-
-# Static and media files (auto-generated)
-static/graphs/
-staticfiles/
-media/
-uploads/
-*.png
-*.jpg
-*.jpeg
-*.gif
-
-# Jupyter notebooks
-.ipynb_checkpoints
-*.ipynb
-
-# Data files (optional)
-*.csv
-*.xlsx
-*.xls
-
-# System and temp files
-.DS_Store
-Thumbs.db
-*.bak
-*.swp
-*.tmp
-*.swo
-
-# Environment variables
-.env
-*.env
-
-# PyCharm and VS Code
-.vscode/
-.idea/
-
-# OS-specific
-desktop.ini
+# Optional: mark templates as Python (for Django)
+core/templates/* linguist-language=Python
